@@ -1,0 +1,11 @@
+{
+  "name": "courier-parcel-tracking",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "npm --prefix frontend run build"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.6.0"
+  }
+}

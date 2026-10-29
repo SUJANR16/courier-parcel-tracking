@@ -1,5 +1,7 @@
 
-const API_URL ="https://us-central1-parceltrack-pro-1024e.cloudfunctions.net/api/api/shipments";
+import { auth } from "../lib/firebase";
+
+const API_URL = "/api/shipments";
 
 export const SHIPMENT_STATUSES = [
   "Booked",
@@ -53,14 +55,29 @@ export interface CreateShipmentInput {
 
 async function apiRequest<T>(
   url: string,
-  options?: RequestInit
+  options?: RequestInit,
+  requiresAdmin = false
 ): Promise<T> {
+  const headers = new Headers(options?.headers);
+
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  if (requiresAdmin) {
+    const user = auth.currentUser;
+
+    if (!user) {
+      throw new Error("Please sign in as an administrator.");
+    }
+
+    const token = await user.getIdToken(true);
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
   const response = await fetch(url, {
     ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options?.headers,
-    },
+    headers,
   });
 
   const result = await response.json().catch(() => ({}));
@@ -87,6 +104,7 @@ function normalizeShipment(raw: any): Shipment {
   };
 
   const status = statusMap[raw.status] ?? "Booked";
+
   const progressMap: Record<ShipmentStatus, number> = {
     Booked: 10,
     "Picked up": 25,
@@ -115,7 +133,10 @@ function normalizeShipment(raw: any): Shipment {
     price: Number(raw.price ?? 0),
     status,
     estimated:
-      raw.estimated ?? raw.estimatedDelivery ?? raw.estimated_delivery ?? "Pending",
+      raw.estimated ??
+      raw.estimatedDelivery ??
+      raw.estimated_delivery ??
+      "Pending",
     progress: Number(raw.progress ?? progressMap[status]),
     createdAt: raw.createdAt ?? raw.created_at,
     events: raw.events ?? [],
@@ -144,8 +165,15 @@ export async function getShipmentByTrackingId(
 }
 
 export async function listShipments(): Promise<Shipment[]> {
-  const result = await apiRequest<{ shipments?: any[] } | any>(API_URL);
-  const shipments = Array.isArray(result) ? result : result.shipments ?? [];
+  const result = await apiRequest<{ shipments?: any[] } | any>(
+    API_URL,
+    undefined,
+    true
+  );
+
+  const shipments = Array.isArray(result)
+    ? result
+    : result.shipments ?? [];
 
   return shipments.map(normalizeShipment);
 }
@@ -159,7 +187,8 @@ export async function updateShipmentStatus(
     {
       method: "PATCH",
       body: JSON.stringify({ status }),
-    }
+    },
+    true
   );
 
   return normalizeShipment(result.shipment ?? result);
